@@ -67,78 +67,20 @@ pipeline {
 
         /*
         ---------------------------------------------------------
-        SMOKE TEST (HARDENED + DEBUG OUTPUT + RETRY)
+        SMOKE TEST (RUN CONTAINER NORMALLY)
         ---------------------------------------------------------
         */
         stage('Smoke Test Docker Container') {
-
             steps {
                 script {
                     echo "Starting smoke test for ${IMAGE_NAME}:${IMAGE_TAG}"
 
-                    def img = docker.image("${IMAGE_NAME}:${IMAGE_TAG}")
+                    sh """
+                        # Start container in background using Dockerfile CMD
+                        CONTAINER_ID=\$(docker run -d -p 8000:8000 ${IMAGE_NAME}:${IMAGE_TAG})
+                        echo "Container started with ID: \$CONTAINER_ID"
 
-                    // This runs the container and exposes port 8000
-                    img.inside('-p 8000:8000') {
+                        echo "*** Waiting for Django to start ***"
 
-                        sh '''
-                            echo "*** Waiting for Django to start ***"
-
-                            # Retry loop (8 attempts, 2 sec apart)
-                            attempts=0
-                            max=8
-                            success=0
-
-                            while [ $attempts -lt $max ]; do
-                                echo "Attempt $(($attempts+1))/$max..."
-
-                                # Save response to a file
-                                curl -s http://localhost:8000 -o response.txt || true
-
-                                # Print first lines so Jenkins shows actual output
-                                echo "---- RESPONSE START ----"
-                                head -n 40 response.txt || true
-                                echo "---- RESPONSE END ----"
-
-                                # Check for expected text
-                                if grep -q "Hello from Jenkins Django Demo!" response.txt; then
-                                    echo "Smoke Test: PASS"
-                                    success=1
-                                    break
-                                fi
-
-                                attempts=$((attempts+1))
-                                sleep 2
-                            done
-
-                            if [ $success -ne 1 ]; then
-                                echo "Smoke Test FAILED after $attempts attempts!"
-                                echo "Complete Response:"
-                                cat response.txt || true
-                                exit 1
-                            fi
-                        '''
-                    }
-                }
-            }
-        }
-
-    } // end of stages
-
-    /*
-    ---------------------------------------------------------
-    POST ACTIONS
-    ---------------------------------------------------------
-    */
-    post {
-        success {
-            echo "Build SUCCESS — Passed all stages."
-        }
-        failure {
-            echo "Build FAILED at: ${BUILD_URL}"
-        }
-        always {
-            cleanWs()
-        }
-    }
-}
+                        attempts=0
+                        max
