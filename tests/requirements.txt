@@ -1,5 +1,0 @@
-django
-pytest
-pytest-django
-request
-gunicorn
