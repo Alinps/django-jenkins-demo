@@ -8,11 +8,6 @@ pipeline {
 
     stages {
 
-        /*
-        ---------------------------------------------------------
-        CHECKOUT CODE
-        ---------------------------------------------------------
-        */
         stage('Checkout') {
             steps {
                 echo "Checking out source code"
@@ -20,11 +15,6 @@ pipeline {
             }
         }
 
-        /*
-        ---------------------------------------------------------
-        SETUP PYTHON + INSTALL DEPENDENCIES
-        ---------------------------------------------------------
-        */
         stage('Setup Python & Install Dependencies') {
             steps {
                 sh '''
@@ -35,11 +25,6 @@ pipeline {
             }
         }
 
-        /*
-        ---------------------------------------------------------
-        RUN TESTS
-        ---------------------------------------------------------
-        */
         stage('Run Tests') {
             steps {
                 sh '''
@@ -49,38 +34,77 @@ pipeline {
             }
         }
 
-        /*
-        ---------------------------------------------------------
-        BUILD DOCKER IMAGE
-        ---------------------------------------------------------
-        */
         stage('Build Docker Image') {
             steps {
                 script {
                     echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
-                    sh """
-                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                    """
+                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
                 }
             }
         }
 
-        /*
-        ---------------------------------------------------------
-        SMOKE TEST (RUN CONTAINER NORMALLY)
-        ---------------------------------------------------------
-        */
         stage('Smoke Test Docker Container') {
             steps {
                 script {
                     echo "Starting smoke test for ${IMAGE_NAME}:${IMAGE_TAG}"
 
                     sh """
-                        # Start container in background using Dockerfile CMD
+                        # Start container using Dockerfile CMD
                         CONTAINER_ID=\$(docker run -d -p 8000:8000 ${IMAGE_NAME}:${IMAGE_TAG})
-                        echo "Container started with ID: \$CONTAINER_ID"
+                        echo "Container ID: \$CONTAINER_ID"
 
-                        echo "*** Waiting for Django to start ***"
+                        echo "Waiting for Django to start..."
 
                         attempts=0
-                        max
+                        max=8
+                        success=0
+
+                        while [ \$attempts -lt \$max ]; do
+                            echo "Attempt \$((attempts+1))/\$max ..."
+
+                            curl -s http://localhost:8000 -o response.txt || true
+
+                            echo "---- RESPONSE START ----"
+                            head -n 40 response.txt || true
+                            echo "---- RESPONSE END ----"
+
+                            if grep -q "Hello from Jenkins Django Demo!" response.txt; then
+                                echo "Smoke Test PASSED!"
+                                success=1
+                                break
+                            fi
+
+                            attempts=\$((attempts+1))
+                            sleep 2
+                        done
+
+                        if [ \$success -ne 1 ]; then
+                            echo "Smoke Test FAILED!"
+                            echo "Container logs:"
+                            docker logs \$CONTAINER_ID || true
+                            docker stop \$CONTAINER_ID || true
+                            docker rm \$CONTAINER_ID || true
+                            exit 1
+                        fi
+
+                        docker stop \$CONTAINER_ID || true
+                        docker rm \$CONTAINER_ID || true
+                    """
+                }
+            }
+        }
+
+    }
+
+    post {
+        success {
+            echo "Build SUCCESS — Passed all stages."
+        }
+        failure {
+            echo "Build FAILED at: ${BUILD_URL}"
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
